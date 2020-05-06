@@ -1,80 +1,95 @@
-// use.
-use rml_rtmp::handshake::Handshake;
-use rml_rtmp::handshake::PeerType; 
-use rml_rtmp::handshake::HandshakeProcessResult;
+use super::PorcessResult;
+use super::PorcessResult::{Callback, Overflow, Empty};
+use rml_rtmp::handshake::Handshake as Handshakes;
+use rml_rtmp::handshake::HandshakeProcessResult::Completed;
+use rml_rtmp::handshake::HandshakeProcessResult::InProgress;
+use rml_rtmp::handshake::PeerType;
+use bytes::Bytes;
 
+/// RTMP 握手处理.
+///
+/// 注意: 目前只作为服务端处理客户端握手.
+pub struct Handshake {
+    handshakes: Handshakes,
 
-/// # Handshake Type.
-#[derive(Debug)]
-pub enum HandshakeType {
-    Overflow(Vec<u8>),
-    Back(Vec<u8>),
-    Clear
+    /// 握手是否完成.
+    pub completed: bool,
 }
 
-
-/// # Handshake Instance.
-pub struct Handshakes {
-    pub server: Handshake,  // rml_rtmp handshake instance.
-    pub completed: bool,  // indicates whether the handshake is complete.
-    pub status: u8  // handshake status.
-}
-
-
-impl Handshakes {
-
-    /// # Create Handshake Instance.
-    pub fn new () -> Self {
-        Handshakes { 
-            status: 0, 
+impl Handshake {
+    /// 创建握手处理.
+    ///
+    /// 创建握手处理类型.
+    /// 通过读取 `completed` 字段可获取握手是否完成.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use handshake::Handshake;
+    ///
+    /// let handshake = Handshake::new();
+    /// // handshake.completed
+    /// ```
+    pub fn new() -> Self {
+        Self {
+            handshakes: Handshakes::new(PeerType::Server),
             completed: false,
-            server: Handshake::new(PeerType::Server)
         }
     }
 
-    /// Check for overflowed data.
-    /// If there is no overflow data, 
-    /// there is no need to externally handle this overflow.
-    pub fn is_overflow (&mut self, overflow: Vec<u8>) -> Option<HandshakeType> {
-        match overflow.len() {
-            0 => Some(HandshakeType::Clear),
-            _ => Some(HandshakeType::Overflow(overflow))
+    /// 握手处理.
+    ///
+    /// 处理TCP数据并返回需要返回的数据或者溢出数据.
+    /// 整个握手过程将自动完成.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// use handshake::Handshake;
+    /// use bytes::Bytes;
+    ///
+    /// let handshake = Handshake::new();
+    /// handshake.process(Bytes::from(b"""));
+    /// ```
+    #[rustfmt::skip]
+    pub fn process(&mut self, chunk: Bytes) -> Option<Vec<PorcessResult>> {
+        match self.handshakes.process_bytes(&chunk[..]) {
+            Ok(InProgress { response_bytes }) => self.inprogress(response_bytes),
+            Ok(Completed { response_bytes, remaining_bytes }) => self.completed(response_bytes, remaining_bytes),
+            _ => None,
         }
     }
 
-    /// No handshake.
-    /// Handling the client C0+C1 package.
-    /// This is the default for most client implementations.
-    /// Returns whether you need to reply to the client data.
-    pub fn handshake_status_first (&mut self, bytes: &Vec<u8>) -> Option<HandshakeType> {
-        match self.server.process_bytes(&bytes) {
-            Ok(HandshakeProcessResult::InProgress { response_bytes: bytes }) => {
-                self.status = 1;
-                Some(HandshakeType::Back(bytes))
-            }, _ => None // default.
+    fn is_overflow (&mut self, overflow: Vec<u8>) -> PorcessResult {
+        match &overflow.is_empty() {
+            false => Overflow(Bytes::from(overflow)),
+            true => Empty
         }
     }
 
-    /// The server has replied to S0+S1+S2.
-    /// Handle the C2 returned by the client.
-    /// No processing.
-    pub fn handshake_status_two (&mut self, bytes: &Vec<u8>) -> Option<HandshakeType> {
-        match self.server.process_bytes(&bytes) {
-            Ok(HandshakeProcessResult::Completed { response_bytes: _, remaining_bytes: overflow }) => {
-                self.status = 2;
-                self.completed = true;
-                self.is_overflow(overflow)
-            }, _ => None // default.
+    /// 握手过程中的处理.
+    /// 
+    /// 握手过程中会返回握手回包.
+    fn inprogress(&mut self, res: Vec<u8>) -> Option<Vec<PorcessResult>> {
+        match &res.is_empty() {
+            false => Some(vec![Callback(Bytes::from(res))]),
+            true => None,
         }
     }
 
-    /// # Process Handshake Bytes packet.
-    /// Assign different processing according to the state of the current handshake.
-    pub fn process (&mut self, bytes: Vec<u8>) -> Option<HandshakeType> {
-        match self.status {
-            0 => self.handshake_status_first(&bytes),
-            1 => self.handshake_status_two(&bytes),
-            _ => None
+    /// 握手完成后的处理.
+    ///
+    /// 到此为止，握手完成.
+    /// 可能还会溢出未处理完成的数据，这时候应该继续交给下个流程进行处理.
+    #[rustfmt::skip]
+    fn completed(&mut self, res: Vec<u8>, remain: Vec<u8>) -> Option<Vec<PorcessResult>> {
+        self.completed = true;
+        let mut results = Vec::new();
+        if !res.is_empty() { results.push(Callback(Bytes::from(res))); }
+        results.push(self.is_overflow(remain));
+        match &results.is_empty() {
+            false => Some(results),
+            true => None,
         }
     }
 }
