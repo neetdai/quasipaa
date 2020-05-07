@@ -50,6 +50,8 @@ impl Session {
                 .for_each(|(_, v)| {
                     if let Some(mut values) = self.process_result(v) {
                         results.append(&mut values);
+                    } else {
+                        println!("fuck");
                     }
                 }),
             Err(_) => ()

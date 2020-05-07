@@ -6,6 +6,6 @@ edition = "2018"
 
 [dependencies]
 bytes = "0.5.4"
-futures = "0.1.27"
+futures = "*"
 rml_rtmp = "0.3.0"
-tokio = "0.1.22"
+tokio = {version = "*",features = ["full"]}

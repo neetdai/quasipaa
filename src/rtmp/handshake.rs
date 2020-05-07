@@ -54,8 +54,14 @@ impl Handshake {
     #[rustfmt::skip]
     pub fn process(&mut self, chunk: Bytes) -> Option<Vec<PorcessResult>> {
         match self.handshakes.process_bytes(&chunk[..]) {
-            Ok(InProgress { response_bytes }) => self.inprogress(response_bytes),
-            Ok(Completed { response_bytes, remaining_bytes }) => self.completed(response_bytes, remaining_bytes),
+            Ok(InProgress { response_bytes }) => {
+                println!("in progress");
+                self.inprogress(response_bytes)
+            },
+            Ok(Completed { response_bytes, remaining_bytes }) => {
+                println!("completed");
+                self.completed(response_bytes, remaining_bytes)
+            },
             _ => None,
         }
     }
@@ -72,7 +78,9 @@ impl Handshake {
     /// 握手过程中会返回握手回包.
     fn inprogress(&mut self, res: Vec<u8>) -> Option<Vec<PorcessResult>> {
         match &res.is_empty() {
-            false => Some(vec![Callback(Bytes::from(res))]),
+            false => {
+                Some(vec![Callback(Bytes::from(res))])
+            },
             true => None,
         }
     }

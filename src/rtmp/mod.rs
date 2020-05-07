@@ -44,16 +44,21 @@ impl Rtmp {
                 for value in results {
                     match value {
                         PorcessResult::Callback(data) => {
+                            println!("callback");
                             &output.put(data);
                         },
                         PorcessResult::Overflow(data) => {
+                            println!("overflow");
                             chunk = data;
                         },
                         PorcessResult::Empty => {
+                            println!("empty");
                             chunk.clear();
                         }
                     }
                 }
+            } else {
+                println!("proccess error");
             }
         }
 
